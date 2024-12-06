@@ -1,0 +1,198 @@
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyverse)
+library(tigris)
+library(sf)
+```
+
+
+```{r, warning=FALSE, message= FALSE}
+## MSP Spatial data
+
+### Census Tracts
+msp_census_tracts <- read.csv("raw_data/minneapolis-tree-canopy.csv") %>%  select(region_name)
+                                                      
+msp_census_tracts <- msp_census_tracts %>%
+  mutate(region_name = str_replace_all(region_name, '[:alpha:]*', "") %>% str_trim()) %>%
+  filter(region_name != "27123043002") %>%
+  filter(region_name != "27053980000") %>%
+  pull(region_name) %>% 
+  as.list()
+
+
+options(tigris_use_cache = TRUE)
+
+# Download Minnesota census tracts as an sf object
+mn_tracts <- tracts(state = "MN", cb = TRUE, year = 2022)  # Replace `2022` with your desired year
+
+
+msp_census_tracts_spatial <- mn_tracts %>%
+  filter(GEOID %in%msp_census_tracts)
+
+### Zip Code Shp
+
+minneapolis_zip_codes <- c(
+  "55401", "55402", "55403", "55404", "55405", "55406", "55407", 
+  "55408", "55409", "55410", "55411", "55412", "55413", "55414", 
+  "55415", "55416", "55417", "55418", "55419", "55423", "55430",
+  "55454", "55455"
+) 
+
+zipcode <- st_read('raw_data/shp_bdry_zip_code_tabulation_areas/zip_code_tabulation_areas.shp')
+
+zipcode <- zipcode %>% filter(ZCTA5CE20 %in% minneapolis_zip_codes)
+
+
+## Zip Code-Census Tract crosswalk
+
+crosswalk <- st_join(msp_census_tracts_spatial, zipcode, join = st_intersects) %>%
+  dplyr::select(tract_id = GEOID, zip_code = ZCTA5CE20) %>%
+              distinct()
+
+
+
+## Social Vulnerability Index
+
+### SVI Data
+
+social_vulnerability <- read.csv('raw_data/svi_2020.csv')
+
+social_vulnerability$FIPS <- social_vulnerability$FIPS %>% as.character()
+
+social_vulnerability <- social_vulnerability %>% 
+  mutate(RPL_THEMES = ifelse(as.numeric(RPL_THEMES)<0,0,RPL_THEMES )) 
+
+social_vulnerability_spatial <- msp_census_tracts_spatial %>% 
+  left_join(social_vulnerability, by = c('GEOID'= 'FIPS')) 
+
+
+## Air Pollution
+
+air_pollution_data_mn <- st_read('raw_data/air_pollution_data_mn.csv')
+
+
+air_pollution_data_msp <- air_pollution_data_mn %>%
+  filter(ZIP_CODE %in% minneapolis_zip_codes) %>%
+  mutate(`EMISSIONS..LB.` = as.numeric(`EMISSIONS..LB.`)) %>%
+  mutate(`EMISSIONS..TONS.` = as.numeric(`EMISSIONS..TONS.`))
+
+air_pollution_data_msp_wide <- air_pollution_data_msp %>%
+  filter(POLLUTANT == "PM2.5 Primary") %>%
+  group_by( ZIP_CODE) %>%
+  summarize(
+    emissions_tons = mean(`EMISSIONS..TONS.`)
+  )
+
+air_pollution_data_msp_wide_with_zip_code_2020 <- zipcode %>% 
+  left_join(air_pollution_data_msp_wide, by = c("ZCTA5CE20" = "ZIP_CODE")) %>%        
+  st_intersection(crosswalk)
+
+## Tree canopy
+
+tree_canopy <- read.csv('raw_data/minneapolis-tree-canopy.csv')
+tree_canopy$region_name <- tree_canopy$region_name %>% str_replace_all('[:alpha:]*', "") %>% str_trim()
+
+tree_canopy_spatial <- msp_census_tracts_spatial %>% 
+  left_join(tree_canopy, by = c('GEOID'= 'region_name'))  
+
+## Join spatial data and dropping geometry
+
+tree_canopy_final <- tree_canopy_spatial %>%  st_drop_geometry()
+air_pollution_final <- air_pollution_data_msp_wide_with_zip_code_2020 %>%  st_drop_geometry()
+social_vulnerability_spatial_final <- social_vulnerability_spatial %>% st_drop_geometry()
+
+final <- tree_canopy_final %>%
+  left_join(air_pollution_final, by = c("GEOID" = "tract_id")) %>% 
+  left_join(social_vulnerability_spatial_final,by = c("GEOID" = "GEOID") ) %>% 
+  select(GEOID, tree_canopy_area, emissions_tons, RPL_THEMES ) %>% 
+  distinct() %>% 
+  mutate(emissions_tons = ifelse(is.na(emissions_tons), 0, emissions_tons)) %>% 
+  group_by(GEOID) %>% 
+   group_by(GEOID) %>% 
+  summarize(tree_canopy_area = tree_canopy_area,
+            air_pollution = mean(emissions_tons),
+            svi_index = RPL_THEMES) %>% 
+  ungroup() %>% 
+  distinct() %>% 
+  filter(GEOID != 27123043002 ) %>% 
+  filter(GEOID != 27053980000)
+
+
+## Redlining 
+
+redlining <- st_read('raw_data/141121-V2')
+
+redlining_msp <- redlining %>% 
+  filter(GEOID20 %in% msp_census_tracts) %>% 
+  st_drop_geometry() %>% 
+  rename(holc_grade = EQINTER20) %>% 
+  mutate(holc_grade = case_when(
+    holc_grade == 1 ~ "A",
+    holc_grade == 2 ~ "B",
+    holc_grade == 3 ~ "C",
+    holc_grade == 4 ~ "D",
+  ))
+
+final <- final %>% 
+  left_join(redlining_msp, by = c("GEOID" = "GEOID20")) %>% 
+  select(GEOID, tree_canopy_area, air_pollution, svi_index, holc_grade) %>% 
+  filter(!is.na(holc_grade)) 
+
+
+## Racial Covenant
+
+racial_covenants <- st_read("raw_data/Hennepin_County_Racial_Covenants")
+
+racial_covenants_minneapolis <- racial_covenants%>%
+  filter(City=="MINNEAPOLIS")
+
+
+# For this part, we asked for help from ChatGPT and the conversation was as follows:
+# 
+# Asked ChatGPT: objective is to merge tracts data (multipolygon) with racial covenants data (point) to identify census tracts containing racial covenants, and to generate a has_covenant indicator column for each census tract.
+# 
+# 1.  Load and Inspect Data
+# 
+# **Census Tracts:** The msp_census_tracts_spatial dataset represents Minneapolis-St. Paul census tracts with geometries in a geographic coordinate system (NAD83).
+# 
+# **Racial Covenants:** The racial_covenants dataset contains geometries for areas with racial covenants, stored in a projected coordinate system (NAD83 / UTM zone 15N).
+# 
+# 2.  Ensure the CRS alignment To perform spatial operations, CRS of the datasets needed to be aligned. We transformed the CRS of racial_covenants to match msp_census_tracts_spatial
+# 
+# **racial_covenants \<- racial_covenants %\>% st_transform(st_crs(msp_census_tracts_spatial))**
+# 
+# 3.  Validate Geometries:
+# 
+# A geometry in racial_covenants was invalid (duplicate vertex in a polygon). We identified and corrected this using:
+# 
+# **invalid_geometries \<- st_is_valid(racial_covenants)** **racial_covenants \<- st_make_valid(racial_covenants)**
+
+racial_covenants <- st_transform(racial_covenants, st_crs(msp_census_tracts_spatial))
+
+invalid_geometries <- st_is_valid(racial_covenants)
+racial_covenants <- st_make_valid(racial_covenants)
+
+census_with_covenants <- msp_census_tracts_spatial %>%
+  left_join(final, by = c("GEOID" = "GEOID")) %>% 
+  mutate(has_covenant = as.integer(st_intersects(geometry, racial_covenants, sparse = FALSE) %>% rowSums() > 0))
+
+final <- final%>%
+  left_join(census_with_covenants%>% st_drop_geometry()%>% dplyr:: select(GEOID, has_covenant), by="GEOID")
+
+
+final$has_covenant <- final %>%
+    filter(!is.na(has_covenant)) %>%
+    pull(has_covenant) %>%
+    as.character()
+
+final$svi_index <- ifelse(final$svi_index > 0.25, 1, 0)
+
+final$holc_grade <- final$holc_grade %>% as.factor()
+
+write.csv(final, "final.csv")
+
+```
+
+

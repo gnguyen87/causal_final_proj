@@ -204,9 +204,8 @@ If the estimate of the causal effect is 0.967, infrastructure divestment would h
 
 From our exploratory data analysis, we observe a strong correlation between ``has_racial_covenants`, `holc_grade`, and `svi_index`.
 
-In higher HOLC grade neighborhoods with dense concentrations of racial covenants, today’s land surface temperature is markedly lower. Contrastly, land surface temperature is remarkably higher in areas that were deemed as “declining”, “hazardous”, and “undesirable”–areas where there were little to no racial covenants.
+In higher HOLC grade neighborhoods with dense concentrations of racial covenants, their social vulnerability level is markedly lower. Contrastly, social vulnerability level is remarkably higher in areas that were deemed as “declining”, “hazardous”, and “undesirable”–areas where there were little to no racial covenants.
 
-Similarly, we can observe these patterns when comparing levels of air pollution from factories. Neighborhoods with a lot of previous racial covenants, ones that were deemed as desirable and worthy of investment, tend to have no factories planted within its vicinity. They tend to be exposed to zero emissions of PM2.5 from nearby factories. On the other hand, in the Near North neighborhood (no racial covenants and C-D HOLC grade), one of Minneapolis’ communities with the biggest BIPOC population, are exposed to severely high levels of PM2.5 emissions. This is because within their area, there are around 15 air emitting factories–including the Hennepin Energy Recovery Center.
 
 ```{r, echo = FALSE, message=FALSE, warning=FALSE}
 
@@ -264,6 +263,7 @@ leaflet() %>%
 
 
 # Final Conclusion
+
 
 # Code
 

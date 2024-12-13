@@ -1,5 +1,5 @@
 ---
-title: "Causal Inference: Milestone2"
+title: "Examining The Roots of Environmental Injustice in Minneapolis"
 author: "Na Nguyen and Charles Batsaikhan"
 format: 
   html:
@@ -18,6 +18,7 @@ library(dagitty)
 library(EValue)
 library(MatchIt)
 library(broom)
+library(leaflet)
 library(marginaleffects)
 library(scales)
 
@@ -32,8 +33,8 @@ msp_census_tracts <- msp_census_tracts %>%
 
 final <- read.csv('data/clean/final.csv')
 social_vulnerability <- st_read('data/clean/social_vulnerability_shp')
-redlining <- st_read('data/raw/141121-V2') %>% 
-  filter(GEOID20 %in% msp_census_tracts) 
+redlining <- st_read('data/clean/redlining_msp_shp') %>% 
+  rename(grade = EQINTER20)
 racial_cov <- st_read("data/clean/racial_cov_msp_shp")
 
 
@@ -201,42 +202,47 @@ If the estimate of the causal effect is 0.967, infrastructure divestment would h
 
 # Correlation Analysis
 
-```{r, echo = FALSE}
+From our exploratory data analysis, we observe a strong correlation between ``has_racial_covenants`, `holc_grade`, and `svi_index`.
+
+In higher HOLC grade neighborhoods with dense concentrations of racial covenants, today’s land surface temperature is markedly lower. Contrastly, land surface temperature is remarkably higher in areas that were deemed as “declining”, “hazardous”, and “undesirable”–areas where there were little to no racial covenants.
+
+Similarly, we can observe these patterns when comparing levels of air pollution from factories. Neighborhoods with a lot of previous racial covenants, ones that were deemed as desirable and worthy of investment, tend to have no factories planted within its vicinity. They tend to be exposed to zero emissions of PM2.5 from nearby factories. On the other hand, in the Near North neighborhood (no racial covenants and C-D HOLC grade), one of Minneapolis’ communities with the biggest BIPOC population, are exposed to severely high levels of PM2.5 emissions. This is because within their area, there are around 15 air emitting factories–including the Hennepin Energy Recovery Center.
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
 
 leaflet() %>%
-  addTiles() %>%
-  addPolygons(
-    data = redlining,
-    fillColor = ~colorFactor(palette = "viridis", domain = as.factor(EQINTER20))(as.factor(EQINTER20)),
-    fillOpacity = 0.7,
-    color = "black", # Polygon border color
-    weight = 1, # Border thickness
-    label = ~paste("HOLC Grade:", as.factor(EQINTER20))
-  ) %>%
-  addCircleMarkers(
-    data = racial_cov,
-    radius = 0.1,
-    color = "red",
-    fillOpacity = 0.01,
-    label = ~Address
-  )  %>%
-  addLegend(
-    position = "bottomright",
-    pal = colorFactor(palette = "viridis", domain = as.factor(redlining$EQINTER20)),
-    values = ~as.factor(EQINTER20),
-    title = "HOLC Grade"
-  ) %>%
-  addLegend(
-    position = "bottomright",
-    colors = "red",
-    labels = "Racial Covenants",
-    title = "Legend"
-  )
+      addTiles() %>%
+      addPolygons(data = redlining,
+                  fillColor = ~colorFactor(palette = "viridis", redlining$grade)(grade),
+                  fillOpacity = 0.7,
+                  color = "black", # Polygon border color
+                  weight = 1, # Border thickness
+                  label = ~paste("HOLC Grade:", redlining$grade),
+      ) %>%
+      addCircleMarkers(data = racial_cov,
+                       radius = .1,
+                       color = "red",
+                       fillOpacity = 0.01,
+                       label = racial_cov$Address
+      ) %>%
+      addLegend(
+        data = redlining,
+        position = "bottomright",
+        pal = colorFactor(palette = "viridis", domain = redlining$grade),
+        values = ~redlining$grade,
+        title = "HOLC Grade"
+      ) %>% 
+      addLegend(
+        data = racial_cov,
+        position = "bottomright",
+        color = "red",
+        label = "Racial Covenants"
+      )
 
 ```
 
 
-```{r}
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
 leaflet() %>%
   addTiles() %>%
   addPolygons(
@@ -253,11 +259,6 @@ leaflet() %>%
     title = "Social Vulnerability Index"
   )
 ```
-
-```{r}
-
-```
-
 
 
 

@@ -1,0 +1,1019 @@
+---
+title: "Examining The Roots of Environmental Injustice in Minneapolis"
+author: "Na Nguyen and Charles Batsaikhan"
+format: 
+  html:
+    embed-resources: true
+    toc: true
+---
+
+
+```{r , warning=FALSE, message= FALSE, include = FALSE}
+library(dplyr)
+library(tidyverse)
+library(sf)
+library(tidycensus)
+library(tigris)
+library(readr)
+library(dagitty)
+library(EValue)
+library(MatchIt)
+library(broom)
+library(leaflet)
+library(marginaleffects)
+library(scales)
+library(RColorBrewer)
+library(spdep)
+library(spatialreg)
+
+
+msp_census_tracts <- read_csv("~/Documents/School/Causal Inference/causal_inference_final_proj/data/minneapolis-tree-canopy.csv")[, "region_name"]
+                                                      
+msp_census_tracts <- msp_census_tracts %>%
+  mutate(region_name = str_replace_all(region_name, '[:alpha:]*', "") %>% str_trim()) %>%
+  filter(region_name != "27123043002") %>%
+  filter(region_name != "27053980000") %>%
+  pull(region_name) %>% 
+  as.list()
+
+lst <- read.csv("data/raw/lst.csv")
+social_vulnerability <- st_read('data/clean/social_vulnerability_shp')
+redlining <- st_read('data/clean/redlining_msp_shp') %>% 
+  rename(grade = EQINTER20)
+racial_cov <- st_read("data/clean/racial_cov_msp_shp")
+
+
+final_geometry <- st_read("~/Documents/School/Causal Inference/causal_inference_final_proj/data/final_geometry.shp")
+
+names(final_geometry) <- c(
+  "GEOID",              
+  "tree_canopy",  
+  "air_pollution",    
+  "svi_index",        
+  "holc_grade",       
+  "has_covenant",   
+  "mean_surface_temp", 
+  "sar_residuals",    
+  "sar_predicted",    
+  "geometry"           
+)
+
+
+final <- read.csv('data/clean/final.csv')
+
+
+
+
+```
+
+
+
+# Introduction
+
+In the 1920s, Minneapolis introduced racial covenants to prevent non-white people from occupying and owning land. As Minnesota witnessed the wave of the First Great Migration, it also legitimized housing discrimination via restrictive clauses inserted into property documents since the presence of non-White, but especially Black people, was regarded to decrease property value. This racist real estate practice paved the way to redlining in the 1940s to decrease home-ownership rates of African American, contributing to their generational dispossession and displacement. [Source 1](https://www.sciencedirect.com/science/article/pii/S0169204624000197)
+[Source 2](https://www.proquest.com/openview/7b2c258bfcf31cbb48629dce3a226693/1?pq-origsite=gscholar&cbl=18750&diss=y)
+
+While white areas were endorsed with beautification projects and accessible green spaces, Black residents saw their neighborhoods surrounded with highways, factories, and overall exposure to hazard. And the legacy of residential segregation has led to stark environmental injustice that tremendously ails Black, Latino, and Native American families in Minneapolis:
+
+-   6x asthma death risk
+    -   Among those who were under age 65, the asthma death rate for Black Minnesotans was 6 times higher than it was for white Minnesotans.
+-   3x higher infant mortality
+    -   Infant mortality rate for Native Americans is nearly 3x higher than that of white Minnesotans.
+-   9x positive COVID-19 tests
+    -   Latinx Minnesotans are testing positive at more than 4 times the overall population and 9 times the white population.
+-   Over 2x the cancer risk
+-   Black Minnesotans have 2.25 times the cancer risk as the average Minnesotan [Source 3](https://www.mncenter.org/environmental-justice)
+
+There has been extensive reseafrch that definitively proves disproportionate pollution linked to geographically disadvantaged and vulnerable communities. However, these research tend to merely provide a snapshot of this picture at a moment in time. Therefore, we would like to contextualize these single portraits of inequality by investigating the relationship between modern day environmental inequality in Minneapolis and 1920’s racial covenants practice.
+
+The research question we would like to explore is as follows: Looking at historically racially covenanted neighborhoods in Minneapolis and present day environmental data, can we still see its impact in the disparity of climate change effects? In other words, *did the introduction of racial covenants in the 1920s cause air pollution inequality in the city of Minneapolis that we see today?*
+
+
+
+# Data
+
+## Sources
+
+-   [**Tree Canopy Data**](https://developers.google.com/earth-engine/datasets/): Sourced from Google Earth Engine (processed CSV).
+-   [**Social Vulnerability Index (SVI)**](https://www.google.com/url?q=https://www.fema.gov/node/cdc-social-vulnerability-index&sa=D&source=editors&ust=1734530093506108&usg=AOvVaw3zSzbdsjfYvDQIERvqepNu): From CDC’s Social Vulnerability Index (2020).
+-   [**Air Pollution Data**](https://data.pca.state.mn.us/views/Airemissions-pointsourcefacilitydata/About?%3Aembed=y&%3AisGuestRedirectFromVizportal=y): Aggregated PM2.5 emissions from permitted facilities in Minnesota (Shapefile).
+-   [**Redlining Data**](https://dsl.richmond.edu/panorama/redlining/data): Historical HOLC neighborhood grading (Shapefile).
+-   [**Racial Covenants**](https://www.google.com/url?q=https://mappingprejudice.umn.edu/racial-covenants/maps-data&sa=D&source=editors&ust=1734531059321007&usg=AOvVaw2ckgeFxg2euCA3YJkN9YSl): Point-level racial covenant data (Shapefile) for Hennepin County.
+-   **Census Data**: Minneapolis census tract boundaries (TIGER/LINE shapefiles).
+
+
+# Data Exploration
+
+## Boxplot: Air Pollution and Land Surface Temperature by Social Vulnerability
+
+In this boxplot, we can observe that between the socially vulnerable (Treated) and non-socially vulnerable (Control) groups, the median for air pollution is higher for the treated group by 0.3 tons of PM2.5 emissions. Similarly, the median for mean land surface temperature per census tracts is higher for treated group by 2 Fahrenheit.
+
+```{r, echo = FALSE}
+median_calc <- lst %>% 
+  mutate(svi_index = as.character(svi_index)) %>%
+  group_by(svi_index) %>%
+  summarize(median_air_pollution = median(air_pollution, na.rm = TRUE))
+
+median <- lst%>%
+  mutate(svi_index = as.character(svi_index)) %>%
+  group_by(svi_index) %>%
+  summarize(median_lst = median(mean_lst, na.rm = TRUE))
+
+
+
+lst %>%
+  mutate(svi_index = as.character(svi_index)) %>%
+  ggplot() +
+  geom_boxplot(aes(x=svi_index, y = air_pollution)) +
+  geom_text(data = median_calc, aes(x = svi_index, y = median_air_pollution, 
+                                    label = paste(round(median_air_pollution, 2))),
+            vjust = -1, color = "black", size = 5) +
+  theme_minimal()
+
+lst %>%
+  mutate(svi_index = as.character(svi_index)) %>%
+  ggplot() +
+  geom_boxplot(aes(x=svi_index, y = mean_lst)) +
+  geom_text(data = median, aes(x = svi_index, y = median_lst, 
+                                    label = paste(round(median_lst, 2))),
+            vjust = -1, color = "black", size = 5) +
+  theme_minimal()
+```
+
+
+# Data Cleaning and Transformation
+
+To prepare the data for analysis, the following steps were taken:
+
+1. **Spatial Joins**:  
+   - Combined census tract shapefiles with air pollution data (aggregated emissions at ZIP code level).
+   - Merged tree canopy data and Social Vulnerability Index (SVI) scores based on the `GEOID` field.
+
+2. **Racial Covenants Integration**:  
+   - Transformed CRS of the racial covenants dataset to match the census tract geometry (`st_transform`).
+   - Used spatial joins (`st_intersects`) to create a binary variable `has_covenant` indicating whether racial covenants exist in a census tract.
+
+3. **Redlining Data**:  
+   - Extracted HOLC grades (A, B, C, D) and joined them with census tracts.
+
+4. **Missing Data Treatment**:  
+   - Replaced missing values for air pollution and tree canopy with zeros (`ifelse` logic).
+   - Filtered out invalid or irrelevant census tracts.
+
+5. **Variable Creation**:  
+   - Created `svi_index` as a binary variable based on CDC thresholds.
+   - Aggregated and summarized air pollution, tree canopy, and temperature data at the census tract level.
+
+The cleaned dataset includes:
+- Census tract geometries.
+- Tree canopy coverage.
+- Air pollution emissions (PM2.5).
+- Social vulnerability status.
+- HOLC grades.
+- Racial covenant indicators.
+- Mean land surface temperature.
+
+6. **Loss of Census tracts**
+
+  - During the matching process we lost 25 census tracts data from 116 to 91 rows of observation.
+  
+
+
+# Methods
+
+Moving forward, we will work with the following variables at the census tract level in the city of Minneapolis:
+
+-   `has_racial_covenants`: whether or not a census tract previously had a racial covenant on its property
+-   `holc_grade`: the census tract's Home Owner Loan Corporation (HOLC) neighborhood grades: A, B, C, or D (corresponding to A = “Best”; B = “Still Desirable”; C = “Declining”; and D = “Hazardous” designations, respectively)
+-   `svi_index`: whether or not a census tract is considered as socially vulnerable by the CDC
+-   `tree_canopy`: the percentage of tree canopy area of a census tract.
+-   `air_pollution`: the average aggregated emission (tons) of PM2.5 from permitted facilities/factories in a census tract.
+
+**Note: A handful of census tracts do not have a `holc_grade` because they reside in downtown business areas of Minneapolis, not residential areas**
+
+## Approach
+
+1.  **Data Cleaning and Transformation**: Processed spatial and tabular datasets, ensuring alignment of projections and merging datasets.
+2.  **Matching**: Controlled for `holc_grade` confounders using Exact Matching to ensure a comparable control group.\
+3.  **Regression Analysis**: Modeled the effect of `svi_index` on air pollution and land surface temperature, controlling for tree canopy coverage and other variables.
+4.  **Spatial Autoregressive Model (SAR)**: Accounted for spatial dependence in land surface temperature.
+
+## Our Causal DAG
+
+According to our DAG, our control set includes the following variables: `holc_grade`, and `tree_canopy`
+
+```{r, warning=FALSE, message= FALSE, echo=FALSE}
+dag<- dagitty(
+  'dag {
+bb="0,0,1,1"
+"infrastructure divestment (U)" [latent,pos="0.408,0.406"]
+"urban/rural" [latent,pos="0.181,0.096"]
+air_pollution [outcome,pos="0.693,0.604"]
+has_racial_covenant [pos="0.180,0.246"]
+holc_grade [pos="0.182,0.399"]
+svi_index [exposure,pos="0.282,0.603"]
+tree_canopy [pos="0.651,0.403"]
+"infrastructure divestment (U)" -> tree_canopy
+"infrastructure divestment (U)" -> svi_index
+"infrastructure divestment (U)" -> air_pollution
+"urban/rural" -> has_racial_covenant
+has_racial_covenant -> holc_grade
+holc_grade -> "infrastructure divestment (U)"
+holc_grade -> svi_index
+svi_index -> air_pollution
+tree_canopy -> air_pollution
+}
+
+')
+
+plot(dag)
+```
+
+# Matching
+
+We originally have 116 total observations, 25 untreated and 91 treated census tracts. In order to control for our confounder---`holc_grade`, we conducted 5 matching methods for an ATE estimand: Nearest Neighbors (k=2), Full Matching, Exact Matching, Coarsened Exact Matching, and Subclass Matching. Our criteria for choosing a final matching method are:
+
+-   Standard Mean Difference for all `holc_grade`'s are well within the 0-0.1 threshold.
+-   Yielding a large enough matched sample size.
+
+In the end, we opted for the Exact Matching Method. As opposed to other methods that resulted in rather large Standard Mean Differences ( \>= 0.4), Exact Matching will keep our SMD at the minimum (0). However, because there are a handful of census tracts that do **not** have a `holc_grade`, our final matched sample size for treated is smaller: 25 untreated and 91 treated. The limited sample size may affect the generalizability of the results, so the findings should be interpreted with caution, and future studies with larger sample sizes would be needed to validate the conclusions.
+
+Nonetheless, this method is the most optimal as it helps us to be confident in our later estimates for the causal relationship between our outcome and treatment variables.
+
+# Estimate Results
+
+### Air Pollution
+
+1.  Estimate (1.41): The coefficient for `svi_index` is 1.41. This suggests that of all census tracts in Minneapolis that are matched on, the air quality is worse for socially vulnerable neighborhoods, with the average annual PM2.5 emissions increasing by 1.41 tons, holding `tree_canopy` constant.
+
+2.  Std. Error (0.504): The standard error of the coefficient is 0.504, which reflects the variability in the estimate of the coefficient. This is a relatively small st.Error.
+
+3.  Pr(\>\|z\|) (0.00525): The p-value is 0.00525, which is much smaller than the commonly used significance threshold of 0.05. This indicates that the relationship between `svi_index` and `air_pollution` is statistically significant.
+
+4.  95% Confidence Interval (0.419, 2.4): Since the interval does not include zero and it's quite narrow, this suggests that there is evidence of a non-zero relationship between `svi_index` and `air_pollution.` We are 95% confident that this CI (0.419, 2.4) represents a range of plausible values for this effect of `svi_index` on `air_pollution`.
+
+```{r, echo = FALSE}
+match_out_exact <- matchit(
+    svi_index ~ holc_grade,
+    data = final,
+    method = "exact",
+    distance = NULL,
+    estimand = "ATE"
+)
+
+match_out_exact_summ <- summary(match_out_exact, interactions = TRUE)
+
+match_out_exact <- match.data(match_out_exact)
+
+
+mod <- lm(air_pollution ~ svi_index * tree_canopy, data = match_out_exact, weights = weights)
+
+avg_comparisons(
+    mod,
+    variables = "svi_index",
+    vcov = ~subclass,
+    newdata = match_out_exact
+)
+
+summary(mod)
+
+
+```
+
+### Land Surface Temperature
+
+1.  Estimate (2.22): The coefficient for `svi_index` is 2.22. This suggests that of all census tracts in Minneapolis that are matched on, the mean land surface temperature is worse for socially vulnerable neighborhoods, with the mean LST increasing by 2.22 Fahrenheits, holding `tree_canopy` constant.
+
+2.  Std. Error (0.76): The standard error of the coefficient is 0.76, which reflects the variability in the estimate of the coefficient. This is a relatively small st.Error.
+
+3.  Pr(\>\|z\|) (2e-16): The p-value is 2e-16, which is much smaller than the commonly used significance threshold of 0.05. This indicates that the relationship between `svi_index` and `mean_lst` is statistically significant.
+
+```{r, echo = FALSE}
+# Exact Matching
+
+match_out_exact <- matchit(
+    svi_index ~ holc_grade,
+    data = final,
+    method = "exact",
+    distance = NULL,
+    estimand = "ATE"
+)
+
+match_out_exact_summ <- summary(match_out_exact, interactions = TRUE)
+
+# Extract matched data
+match_out_exact_data <- match.data(match_out_exact)%>%
+  left_join(lst%>%
+              select(GEOID, mean_lst),
+            by="GEOID")
+
+
+
+mod_lst <- lm(mean_lst ~ svi_index * tree_canopy, 
+      data = match_out_exact_data, weights = weights)
+
+
+summary(mod_lst)
+```
+
+# Sensitivity Analysis
+
+## Unexplained Cofoundes for Air Pollution
+
+```{r, echo = FALSE}
+evalues.OLS(1.41, 0.504, sd=sd(match_out_exact_data$air_pollution))
+```
+
+1)  Social vulnerability would have to be 2.14 times more common in census tracts with infrastructure divestment than those that don't.
+
+2)  Infrastructure divestment would have to be 2.14 times more common in census tracts with high pollution areas than those that don't.
+
+## Unexplained Cofounder for Mean LST
+
+```{r, echo = FALSE}
+evalues.OLS(est = 2.22328, se = 0.75985, sd = sd(match_out_exact_data$mean_lst, na.rm = TRUE))
+```
+
+1)  Social vulnerability would need to be 4.36 times more common in census tracts with infrastructure divestment than in those without, to explain away the observed association between social vulnerability and mean surface temperature.
+
+2)  Similarly, infrastructure divestment would need to be 4.36 times more common in census tracts with high mean surface temperatures than in those with lower temperatures, to nullify the observed causal effect.
+
+# Correlation Analysis
+
+From our exploratory data analysis, we observe a strong correlation between `has_racial_covenants`, `holc_grade`, `air_pollution`, `mean lst`, and `svi_index`.
+
+In higher HOLC grade neighborhoods with dense concentrations of racial covenants, their social vulnerability level is markedly lower. Contrast, social vulnerability level is remarkably higher in areas that were deemed as “declining”, “hazardous”, and “undesirable”–areas where there were little to no racial covenants.
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+library(leaflet)
+library(sf)
+library(dplyr)
+
+
+racial_minneapolis <- racial_cov %>%
+  filter(City == "MINNEAPOLIS")
+
+racial_msp_points <- st_centroid(racial_minneapolis)
+
+# Filter HOLC grades for MSP census tracts and rename without dropping geometry
+
+redlining_msp <- redlining %>% 
+  filter(GEOID20 %in% msp_census_tracts) %>% 
+  rename(holc_grade = EQINTER20) %>% 
+  mutate(holc_grade = case_when(
+    holc_grade == 1 ~ "A",
+    holc_grade == 2 ~ "B",
+    holc_grade == 3 ~ "C",
+    holc_grade == 4 ~ "D",
+  ))
+
+minneapolis_map <- leaflet() %>%
+  addTiles() %>%
+  
+  
+  addPolygons(
+    data = redlining_msp,
+    fillColor = ~colorFactor("viridis", redlining$holc_grade)(holc_grade),
+    color = "black",
+    weight = 1,
+    opacity = 0.8,
+    fillOpacity = 0.5,
+    highlightOptions = highlightOptions(
+      weight = 3,
+      color = "blue",
+      fillOpacity = 0.7,
+      bringToFront = TRUE
+    ),
+    label = ~paste("HOLC Grade:", holc_grade)
+  ) %>%
+  
+  # Add racial covenant centroids as points
+  addCircleMarkers(
+    data = racial_msp_points,
+    radius = 3,
+    color = "purple",
+    fillColor = "purple",
+    weight = 1,
+    opacity = 0.8,
+    fillOpacity = 0.7,
+    label = ~paste("Address:", Address, "<br>", "Date:", Date_Deed)
+  ) %>%
+  
+  # Add legend for racial covenants
+  addLegend(
+    position = "bottomleft",
+    colors = "purple",
+    labels = "Racial Covenants",
+    title = "Racial Covenants Overlay"
+  ) %>%
+  
+  # Add legend for HOLC grades
+  addLegend(
+    position = "bottomright",
+    pal = colorFactor("viridis", redlining$grade),
+    values = redlining$grade,
+    title = "HOLC Grades"
+  )
+
+# Display the map
+minneapolis_map
+
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+# Map Social Vulnerability Index
+pal_svi <- colorNumeric(
+  palette = c("green", "yellow", "red"),
+  domain  = c(0, 1)  # or social_vulnerability_spatial$RPL_THEMES
+)
+
+leaflet(social_vulnerability_spatial) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor   = ~pal_svi(RPL_THEMES),
+    fillOpacity = 0.7,
+    color       = "black",
+    weight      = 1,
+    label       = ~paste("SVI Score:", round(RPL_THEMES, 2))
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    pal      = pal_svi,
+    values   = social_vulnerability_spatial$RPL_THEMES,
+    title    = "Social Vulnerability Index"
+  )
+
+lst_map <- leaflet(final_geometry) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~colorNumeric(palette = "YlOrRd", domain = final_geometry$mean_surface_temp)(mean_surface_temp),
+    fillOpacity = 0.7,
+    color = "black",
+    weight = 1,
+    label = ~paste("LST (°F):", round(mean_surface_temp, 2)),
+    highlightOptions = highlightOptions(
+      weight = 3,
+      color = "blue",
+      bringToFront = TRUE
+    )
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = colorNumeric("YlOrRd", final_geometry$mean_surface_temp),
+    values = final_geometry$mean_surface_temp,
+    title = "Mean LST (°F)"
+  )
+
+lst_map
+
+air_pollution_map <- leaflet(final_geometry) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~colorNumeric(palette = "PuBu", domain = final_geometry$air_pollution)(air_pollution),
+    fillOpacity = 0.7,
+    color = "black",
+    weight = 1,
+    label = ~paste("Air Pollution (tons):", round(air_pollution, 2)),
+    highlightOptions = highlightOptions(
+      weight = 3,
+      color = "blue",
+      bringToFront = TRUE
+    )
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = colorNumeric("PuBu", final_geometry$air_pollution),
+    values = final_geometry$air_pollution,
+    title = "Air Pollution (tons)"
+  )
+
+air_pollution_map
+```
+
+As you can see, we see lot of correlation between HOLC grade & racial covenants areas with our environmental and social variables. In short, places that experience higher mean LST, high air pollution, and place with high social vulnerability score are associated with places with lower HOLC grade and places with no to little racial covenants areas. What does this tell us? It tell us that places that are deemed "risky" to invest and places that that did not barr people of color to live are the same places that experince worse environemntal factors like air pollution and mean LST.
+
+
+
+# Spatial Autoregressive (SAR) model
+
+To address the potential spatial dependence in **Land Surface Temperature (LST)** across census tracts, we implemented a **Spatial Autoregressive (SAR) Model**. Spatial models account for spatial relationships between observations, ensuring more reliable estimates when spatial autocorrelation exists.
+
+## Descriptive Statistics
+
+We first summarize the descriptive statistics for **census tracts with and without racial covenants**:
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+# Grouped Summary
+summary_stats <- final_geometry %>%
+  group_by(has_covenant) %>%
+  summarise(
+    mean_lst = mean(mean_surface_temp, na.rm = TRUE),
+    sd_lst = sd(mean_surface_temp, na.rm = TRUE),
+    mean_tree_canopy = mean(tree_canopy, na.rm = TRUE),
+    sd_tree_canopy = sd(tree_canopy, na.rm = TRUE),
+    mean_air_pollution = mean(air_pollution, na.rm = TRUE),
+    sd_air_pollution = sd(air_pollution, na.rm = TRUE)
+  )
+
+print(summary_stats)
+```
+
+| **Racial Covenant** | **Mean LST (**\u00b0F) | **SD LST** | **Mean Tree Canopy (%)** | **SD Tree Canopy** | **Mean Air Pollution (tons)** | **SD Air Pollution** |
+|-----------|----------:|----------:|----------:|----------:|----------:|----------:|
+| **No** | 96.33 | 1.50 | 24.73 | 8.40 | 1.75 | 1.52 |
+| **Yes** | 94.76 | 1.15 | 34.12 | 7.87 | 2.03 | 1.69 |
+
+As you can see, places with no racial covenants are experiencing higher mean LST, higher mean air pollution, and lower tree canopy coverage. This further proves our point that there is environmental discriminaton within the neighborhoods of Minneaplis.
+
+## SAR Model Setup and Results
+
+### Step 1: Defining Spatial Relationship
+
+We defined spatial relationships using **Queen Contiguity** to identify neighboring census tracts. This method considers census tracts that share edges or vertices as neighbors.
+
+```{r, echo=FALSE}
+
+queen_nb <- poly2nb(final_geometry, queen = TRUE)
+weights <- nb2listw(queen_nb, style = "W")
+```
+
+### Step 2: Fitting the SAR Model
+
+We fit a **SAR Lag Model** with the following predictors:
+
+-   `svi_index`: Social vulnerability index.
+-   `tree_canopy`: Tree canopy coverage percentage.
+-   `air_pollution`: PM2.5 air pollution emissions.
+-   `has_covenant`: Binary indicator for racial covenants.
+-   `holc_grade`: Redlining classification (A, B, C, D).
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+# Fit the SAR Lag Model
+sar_model <- lagsarlm(mean_surface_temp ~ svi_index + tree_canopy + 
+                      air_pollution + has_covenant + holc_grade, 
+                      data = final_geometry,
+                      listw = weights,
+                      method = "eigen")
+
+summary(sar_model)
+```
+
+### SAR Model Results
+
+-   **Spatial Lag Coefficient rho**: **0.398** (p\<0.001), indicating significant spatial dependence in LST across census tracts.
+
+
+
+## Interpreation of Results
+
+1.  **Tree Canopy Coverage**:
+    -   Each **1% increase in tree canopy** reduces mean LST by **0.13 Fº** (p \< 0.001).
+    -   This reinforces the importance of green infrastructure in mitigating urban heat.
+2.  **Social Vulnerability**:
+    -   Socially vulnerable census tracts have slightly lower mean LST (-0.45 Fº); (p = 0.041).
+    -   While counter intuitive, this suggests a complex interplay between social vulnerability and local urban characteristics. This is a results that is interesting and definetly worth exploring in the future.
+3.  **Air Pollution**:
+    -   Higher air pollution emissions are associated with a small but significant reduction in LST (-0.07 Fº); (p = 0.039).
+4.  **Racial Covenants**:
+    -   No significant direct effect of racial covenants was observed on LST (p = 0.768). However, covenants may indirectly influence LST through tree canopy and historical urban planning patterns.
+
+
+
+## Visualizing SAR Model Results
+
+### Observed Land Surface Temperature
+
+```{r, echo=FALSE}
+ggplot(final_geometry) +
+  geom_sf(aes(fill = mean_surface_temp)) +
+  scale_fill_gradient(low = "lightgrey", high = "red", name = "Mean LST") +
+  labs(title = "Observed Land Surface Temperature") +
+  theme_minimal()
+```
+
+### Residuals from SAR Model
+
+```{r, echo=FALSE}
+# Add SAR Residuals
+final_geometry$sar_resid <- resid(sar_model)
+
+ggplot(final_geometry) +
+  geom_sf(aes(fill = sar_resid)) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, name = "Residuals") +
+  labs(title = "Residuals from SAR Model") +
+  theme_minimal()
+```
+The residual visualization from the SAR model highlights areas where the model over-predicts or under-predicts land surface temperature (LST). Positive residuals, shown in red, indicate census tracts where the observed LST is higher than the model's predictions, suggesting unaccounted factors contributing to elevated temperatures, such as localized infrastructure or land use patterns. Negative residuals, represented in blue, show areas where the model over-predicts LST, potentially due to higher tree canopy coverage or cooling effects not fully captured. The spatial clustering of residuals in certain areas suggests the presence of additional spatial patterns or unmeasured variables influencing LST, indicating that while the model accounts for spatial dependence, there are still localized effects worth further investigation.
+
+
+### Predicted Land Surface Temperature
+
+```{r, echo=FALSE}
+# Add Predicted Values
+final_geometry$sar_pred <- fitted(sar_model)
+
+ggplot(final_geometry) +
+  geom_sf(aes(fill = sar_pred)) +
+  scale_fill_gradient(low = "lightgrey", high = "red", name = "Predicted LST") +
+  labs(title = "Predicted Land Surface Temperature") +
+  theme_minimal()
+```
+
+The predicted land surface temperature (LST) map highlights clear differences across Minneapolis neighborhoods. Higher temperatures, shown in darker red, are concentrated in the central and northern parts of the city. These are the areas with less tree canopy coverage, denser urban infrastructure, and historical factors that contribute to elevated heat levels. In contrast, the lighter areas on the outskirts of the city reflect cooler temperatures, which could be attributed to more green spaces and lower development density. This pattern suggests a connection between urban planning, environmental disparities, and the ongoing impacts of historical decisions on vulnerable communities.
+
+## Moran’s I Test for Residuals
+
+To confirm that spatial autocorrelation was successfully addressed, we performed a **Moran’s I Test** on the residuals.
+
+```{r, echo=FALSE}
+moran_test <- moran.test(final_geometry$sar_resid, weights)
+print(moran_test)
+```
+
+### Moran's I Results:
+
+-   **Moran's I Statistic**: (0.0396)
+-   **p-value**: (0.194)
+
+The residuals show no significant spatial autocorrelation, indicating that the SAR model effectively captured the spatial dependence.
+
+
+# Final Conclusion
+
+In this study, we investigated the lasting impact of racial covenants on environmental inequality in Minneapolis, specifically focusing on air pollution and land surface temperature (LST). Our key results showed that socially vulnerable neighborhoods, identified by the Social Vulnerability Index (SVI), experienced higher levels of air pollution and elevated land surface temperatures compared to less vulnerable areas. The SAR model further revealed that tree canopy coverage significantly reduced LST, while the direct influence of racial covenants on temperature was not statistically significant. Importantly, the Moran’s I test confirmed that spatial dependence was successfully addressed, strengthening the reliability of our findings.
+
+These results align with existing research linking historical redlining and discriminatory housing policies to contemporary environmental injustices. However, the observed weaker direct association between racial covenants and LST suggests a more complex relationship where tree canopy coverage and infrastructure decisions may act as mediators. While expected trends were observed—higher air pollution and LST in vulnerable areas—the specifics of these effects and the role of spatial dependencies were surprising and highlight the complex nature of environmental inequality.
+
+## Limitations
+
+1) Scope: Our analysis was geographically restricted to Minneapolis and may not generalize to other urban areas with differing histories of segregation or environmental infrastructure.
+
+2) Temporal Constraints: The analysis relied on modern environmental data, and while historical covenants were integrated, the lack of longitudinal data limits our ability to trace environmental disparities over time.
+
+3) We lost 25 census tracts during the matching process where higher than average air pollution and mean lst data were lost, consequently, lowering the regression estimation results.
+
+## Future Directions
+
+1) Incorporate Longitudinal Data: Analyze changes in environmental conditions over multiple decades to better capture the temporal evolution of inequality.
+
+2) Expand Geographic Scope: Compare results across other U.S. cities with similar redlining histories to identify broader trends.
+
+3) Include Additional Mediators: Explore the role of infrastructure investments, park access, and zoning policies as potential mediators in the relationship between historical segregation and modern environmental outcomes.
+
+
+# Code
+
+Full Matching
+
+```{r, eval = FALSE}
+#| code-fold: true
+match_out_full <- matchit(
+    svi_index ~ holc_grade,
+    data = final,
+    method = "full",
+    distance = "glm",
+    estimand = "ATE"
+)
+
+match_out_full_summ <- summary(match_out_full, interactions = TRUE)
+
+plot(match_out_full_summ)
+```
+
+Subclass matching
+
+```{r, eval = FALSE}
+#| code-fold: true
+match_out_subclass <- matchit(
+    svi_index ~ holc_grade,
+    data = final,
+    method = "subclass",
+    subclass = 5,
+    distance = "glm",
+    estimand = "ATT"
+)
+
+# Compute balance statistics overall across all subclasses
+match_out_subclass_summ <- summary(match_out_subclass, interactions = TRUE)
+plot(match_out_subclass_summ)
+```
+
+Coarsened Exact Matching
+
+```{r,  eval = FALSE}
+#| code-fold: true
+cutpoints <- list(
+  svi_index = quantile(final$svi_index, probs = seq(0, 1, 0.25), na.rm = TRUE),  
+  holc_grade = c(0, 1, 2, 3, 4) 
+)
+
+# Apply Coarsened Exact Matching
+match_out_cem <- matchit(
+  svi_index ~ holc_grade,
+  data = final,
+  method = "cem",
+  cutpoints = cutpoints,  #
+  estimand = "ATE"
+)
+
+
+match_out_cem_summ <- summary(match_out_cem, interactions = TRUE)
+print(match_out_cem_summ)
+
+
+```
+
+Exact Matching
+
+```{r,  eval = FALSE}
+#| code-fold: true
+match_out_exact <- matchit(
+    svi_index ~ holc_grade,
+    data = final,
+    method = "exact",
+    distance = NULL,
+    estimand = "ATE"
+)
+
+match_out_exact_summ <- summary(match_out_exact, interactions = TRUE, un = FALSE)
+match_out_exact_summ
+
+```
+
+Estimates
+
+Air Pollution
+
+```{r,  eval = FALSE}
+#| code-fold: true
+
+
+matched_data <- match.data(match_out_exact)
+
+
+mod <- lm(air_pollution ~ svi_index * tree_canopy, data = matched_data, weights = weights)
+
+
+avg_comparisons(
+    mod,
+    variables = "svi_index",
+    vcov = ~subclass,
+    newdata = matched_data
+)
+
+```
+
+Mean Land Surface Temperature
+
+```{r,  eval = FALSE}
+#| code-fold: true
+
+match_out_exact_data <- match.data(match_out_exact)%>%
+  left_join(lst%>%
+              select(GEOID, mean_lst),
+            by="GEOID")
+
+
+
+mod_lst <- lm(mean_lst ~ svi_index * tree_canopy, data = match_out_exact_data, weights = weights)
+summary(mod_lst)
+
+```
+
+Evalues
+
+```{r,  eval = FALSE}
+#| code-fold: true
+
+evalues.OLS(1.41, 0.504, sd=sd(match_out_exact_data$air_pollution))
+```
+
+```{r,  eval = FALSE}
+#| code-fold: true
+
+evalues.OLS(est = 2.22328, se = 0.75985, sd = sd(match_out_exact_data$mean_lst, na.rm = TRUE))
+```
+
+Correlation Analysis
+
+```{r,  eval = FALSE}
+#| code-fold: true
+library(leaflet)
+library(sf)
+library(dplyr)
+
+
+racial_minneapolis <- racial_cov %>%
+  filter(City == "MINNEAPOLIS")
+
+racial_msp_points <- st_centroid(racial_minneapolis)
+
+# Filter HOLC grades for MSP census tracts and rename without dropping geometry
+
+redlining_msp <- redlining %>% 
+  filter(GEOID20 %in% msp_census_tracts) %>% 
+  rename(holc_grade = EQINTER20) %>% 
+  mutate(holc_grade = case_when(
+    holc_grade == 1 ~ "A",
+    holc_grade == 2 ~ "B",
+    holc_grade == 3 ~ "C",
+    holc_grade == 4 ~ "D",
+  ))
+
+minneapolis_map <- leaflet() %>%
+  addTiles() %>%
+  
+  
+  addPolygons(
+    data = redlining_msp,
+    fillColor = ~colorFactor("viridis", redlining$holc_grade)(holc_grade),
+    color = "black",
+    weight = 1,
+    opacity = 0.8,
+    fillOpacity = 0.5,
+    highlightOptions = highlightOptions(
+      weight = 3,
+      color = "blue",
+      fillOpacity = 0.7,
+      bringToFront = TRUE
+    ),
+    label = ~paste("HOLC Grade:", holc_grade)
+  ) %>%
+  
+  # Add racial covenant centroids as points
+  addCircleMarkers(
+    data = racial_msp_points,
+    radius = 3,
+    color = "purple",
+    fillColor = "purple",
+    weight = 1,
+    opacity = 0.8,
+    fillOpacity = 0.7,
+    label = ~paste("Address:", Address, "<br>", "Date:", Date_Deed)
+  ) %>%
+  
+  # Add legend for racial covenants
+  addLegend(
+    position = "bottomleft",
+    colors = "purple",
+    labels = "Racial Covenants",
+    title = "Racial Covenants Overlay"
+  ) %>%
+  
+  # Add legend for HOLC grades
+  addLegend(
+    position = "bottomright",
+    pal = colorFactor("viridis", redlining$grade),
+    values = redlining$grade,
+    title = "HOLC Grades"
+  )
+
+# Display the map
+minneapolis_map
+
+
+# Map Social Vulnerability Index
+leaflet() %>%
+  addTiles() %>%
+  addPolygons(
+    data = social_vulnerability_spatial,
+    fillColor = ~colorNumeric(palette = "inferno", domain = social_vulnerability$RPL_THEMES)(RPL_THEMES),
+    fillOpacity = 0.7,
+    color = "black",
+    weight = 1,
+    label = ~paste("SVI Score:", round(RPL_THEMES, 2)) # Proper column for SVI
+  ) %>%
+  addLegend(
+    position = "bottomright",
+    pal = colorNumeric(palette = "inferno", domain = social_vulnerability$RPL_THEMES),
+    values = social_vulnerability$RPL_THEMES,
+    title = "Social Vulnerability Index"
+  )
+
+
+lst_map <- leaflet(final_geometry) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~colorNumeric(palette = "YlOrRd", domain = final_geometry$mean_surface_temp)(mean_surface_temp),
+    fillOpacity = 0.7,
+    color = "black",
+    weight = 1,
+    label = ~paste("LST (°F):", round(mean_surface_temp, 2)),
+    highlightOptions = highlightOptions(
+      weight = 3,
+      color = "blue",
+      bringToFront = TRUE
+    )
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = colorNumeric("YlOrRd", final_geometry$mean_surface_temp),
+    values = final_geometry$mean_surface_temp,
+    title = "Mean LST (°F)"
+  )
+
+lst_map
+
+air_pollution_map <- leaflet(final_geometry) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~colorNumeric(palette = "PuBu", domain = final_geometry$air_pollution)(air_pollution),
+    fillOpacity = 0.7,
+    color = "black",
+    weight = 1,
+    label = ~paste("Air Pollution (tons):", round(air_pollution, 2)),
+    highlightOptions = highlightOptions(
+      weight = 3,
+      color = "blue",
+      bringToFront = TRUE
+    )
+  ) %>%
+  addLegend(
+    "bottomright",
+    pal = colorNumeric("PuBu", final_geometry$air_pollution),
+    values = final_geometry$air_pollution,
+    title = "Air Pollution (tons)"
+  )
+
+air_pollution_map
+
+```
+
+Descriptive Statistics
+
+```{r, eval=FALSE}
+#| code-fold: true
+
+summary_stats <- final_geometry %>%
+  group_by(has_covenant) %>%
+  summarise(
+    mean_lst = mean(mean_surface_temp, na.rm = TRUE),
+    sd_lst = sd(mean_surface_temp, na.rm = TRUE),
+    mean_tree_canopy = mean(tree_canopy, na.rm = TRUE),
+    sd_tree_canopy = sd(tree_canopy, na.rm = TRUE),
+    mean_air_pollution = mean(air_pollution, na.rm = TRUE),
+    sd_air_pollution = sd(air_pollution, na.rm = TRUE)
+  )
+
+print(summary_stats)
+```
+
+SAR Model Setup and Results
+
+```{r, eval=FALSE}
+#| code-fold: true
+
+queen_nb <- poly2nb(final_geometry, queen = TRUE)
+weights <- nb2listw(queen_nb, style = "W")
+
+sar_model <- lagsarlm(
+  mean_surface_temp ~ svi_index + tree_canopy + air_pollution + has_covenant + holc_grade,
+  data = final_geometry,
+  listw = weights,
+  method = "eigen"
+)
+
+```
+
+Visualizing SAR Model and Results
+
+```{r, eval=FALSE}
+#| code-fold: true
+ggplot(final_geometry) +
+  geom_sf(aes(fill = mean_surface_temp)) +
+  scale_fill_gradient(low = "lightgrey", high = "red", name = "Mean LST") +
+  labs(title = "Observed Land Surface Temperature") +
+  theme_minimal()
+
+final_geometry$sar_resid <- resid(sar_model)
+
+ggplot(final_geometry) +
+  geom_sf(aes(fill = sar_resid)) +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0, name = "Residuals") +
+  labs(title = "Residuals from SAR Model") +
+  theme_minimal()
+
+final_geometry$sar_pred <- fitted(sar_model)
+
+ggplot(final_geometry) +
+  geom_sf(aes(fill = sar_pred)) +
+  scale_fill_gradient(low = "lightgrey", high = "red", name = "Predicted LST") +
+  labs(title = "Predicted Land Surface Temperature") +
+  theme_minimal()
+```
+
+Moran's I Test
+
+```{r, eval=FALSE}
+#| code-fold: true
+
+moran_test <- moran.test(final_geometry$sar_resid, weights)
+print(moran_test)
+
+```
+
+
+
+
+
+

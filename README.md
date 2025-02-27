@@ -14,8 +14,8 @@ The research question we would like to explore is as follows: Looking at histori
 ### data
 This `data` folder holds all of our utilized data, raw and clean. Our data cleaning process is captured in `data_cleaning.qmd`
 
-## final_report
-The `final_report.qmd` holds all of our causal inference code work and analysis. The `final_report.html` is a rendered version of this file.
+## index
+The `index.qmd` holds all of our causal inference code work and analysis. The `index.html` is a rendered version of this file.
 
 ## Code Dependencies 
 The following packages should be installed into RStudio before running our files:

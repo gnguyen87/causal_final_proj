@@ -43,4 +43,4 @@ library(spatialreg)
 This work is part of a larger project that can be found in this [repo](https://github.com/gnguyen87/ds456_nrmc) and is also published on this [website](https://gnguyen87.github.io/ds456_nrmc_website/).
 
 ## Acknowledgments
-We extend our gratitude to Professor Leslie Myint (Macalester College) for her invaluable guidance and input throughout this project.
+We extend our gratitude to Professor Leslie Myint (Macalester College, MN) for her invaluable guidance and input throughout this project.

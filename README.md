@@ -2,8 +2,8 @@
 
 By Na Nguyen and Charles Batsaikhan.
 
-In the 1920s, Minneapolis introduced racial covenants to prevent non-white people from occupying and owning land. As Minnesota witnessed the wave of the First Great Migration, it also legitimized housing discrimination via restrictive clauses inserted into property documents since the presence of non-White, but especially Black people, was regarded to decrease property value. This racist real estate practice paved the way to redlining in the 1940s to decrease home-ownership rates of African American, contributing to their generational dispossession and displacement. [Source 1](https://www.sciencedirect.com/science/article/pii/S0169204624000197)
-[Source 2](https://www.proquest.com/openview/7b2c258bfcf31cbb48629dce3a226693/1?pq-origsite=gscholar&cbl=18750&diss=y)
+In the 1920s, Minneapolis introduced racial covenants to prevent non-white people from occupying and owning land. As Minnesota witnessed the wave of the First Great Migration, it also legitimized housing discrimination via restrictive clauses inserted into property documents since the presence of non-White, but especially Black people, was regarded to decrease property value. This racist real estate practice paved the way to redlining in the 1940s to decrease home-ownership rates of African American, contributing to their generational dispossession and displacement ([Source 1](https://www.sciencedirect.com/science/article/pii/S0169204624000197)
+[Source 2](https://www.proquest.com/openview/7b2c258bfcf31cbb48629dce3a226693/1?pq-origsite=gscholar&cbl=18750&diss=y)).
 
 There has been extensive research that definitively proves disproportionate effects and exposure to pollution is linked to geographically disadvantaged and vulnerable communities. However, these research tend to merely provide a snapshot of this picture at a moment in time. Therefore, we would like to contextualize these single portraits of inequality by investigating the relationship between modern day environmental inequality in Minneapolis and 1920’s racial covenants practice.
 
